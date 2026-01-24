@@ -1,17 +1,17 @@
 // app/api/check-ins/route.ts
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs';
+import { auth } from '@clerk/nextjs/server';
 import { createClient } from '@/lib/supabase/server';
 import { analyzeRisk } from '@/lib/risk-analyzer';
 
 export async function POST(request: Request) {
   try {
-    const { userId } = auth();
+    const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabase = createClient();
+    const supabase = await createClient();
     const body = await request.json();
 
     const {
@@ -23,22 +23,16 @@ export async function POST(request: Request) {
       notes = ''
     } = body;
 
-    // Validate required fields
     if (!patient_id || pain_level === undefined || !temperature || !mobility) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Get previous check-ins for trend analysis
     const { data: previousCheckIns } = await supabase
       .from('check_ins')
       .select('*')
       .eq('patient_id', patient_id)
       .order('created_at', { ascending: true });
 
-    // Analyze risk using AI
     const riskAnalysis = analyzeRisk(
       {
         pain_level: parseInt(pain_level),
@@ -49,7 +43,6 @@ export async function POST(request: Request) {
       previousCheckIns || []
     );
 
-    // Insert check-in with risk analysis
     const { data: checkIn, error: checkInError } = await supabase
       .from('check_ins')
       .insert({
@@ -65,13 +58,9 @@ export async function POST(request: Request) {
       .single();
 
     if (checkInError) {
-      return NextResponse.json(
-        { error: checkInError.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: checkInError.message }, { status: 500 });
     }
 
-    // Create alerts if risk detected
     if (riskAnalysis.alerts.length > 0) {
       const alertsToInsert = riskAnalysis.alerts.map(message => ({
         patient_id,
@@ -81,13 +70,8 @@ export async function POST(request: Request) {
         severity: riskAnalysis.riskLevel === 'high' ? 'critical' : 'warning'
       }));
 
-      const { error: alertsError } = await supabase
-        .from('alerts')
-        .insert(alertsToInsert);
-
-      if (alertsError) {
-        console.error('Error creating alerts:', alertsError);
-      }
+      const { error: alertsError } = await supabase.from('alerts').insert(alertsToInsert);
+      if (alertsError) console.error('Error creating alerts:', alertsError);
     }
 
     return NextResponse.json({
@@ -101,16 +85,13 @@ export async function POST(request: Request) {
 
   } catch (error) {
     console.error('Error creating check-in:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function GET(request: Request) {
   try {
-    const { userId } = auth();
+    const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -119,13 +100,10 @@ export async function GET(request: Request) {
     const patientId = searchParams.get('patient_id');
 
     if (!patientId) {
-      return NextResponse.json(
-        { error: 'patient_id is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'patient_id is required' }, { status: 400 });
     }
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { data: checkIns, error } = await supabase
       .from('check_ins')
@@ -133,16 +111,11 @@ export async function GET(request: Request) {
       .eq('patient_id', patientId)
       .order('created_at', { ascending: false });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     return NextResponse.json({ checkIns });
   } catch (error) {
     console.error('Error fetching check-ins:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

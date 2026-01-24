@@ -1,106 +1,43 @@
-// app/api/check-ins/route.ts
+// app/api/alerts/route.ts
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs';
+import { auth } from '@clerk/nextjs/server';
 import { createClient } from '@/lib/supabase/server';
-import { analyzeRisk } from '@/lib/risk-analyzer';
 
-export async function POST(request: Request) {
+export async function GET(request: Request) {
   try {
-    const { userId } = auth();
+    const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabase = createClient();
-    const body = await request.json();
+    const { searchParams } = new URL(request.url);
+    const patientId = searchParams.get('patient_id');
+    const unacknowledgedOnly = searchParams.get('unacknowledged') === 'true';
 
-    const {
-      patient_id,
-      pain_level,
-      temperature,
-      mobility,
-      symptoms = [],
-      notes = ''
-    } = body;
+    const supabase = await createClient();
 
-    // Validate required fields
-    if (!patient_id || pain_level === undefined || !temperature || !mobility) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
+    let query = supabase
+      .from('alerts')
+      .select('*, patients(name)')
+      .order('created_at', { ascending: false });
+
+    if (patientId) {
+      query = query.eq('patient_id', patientId);
     }
 
-    // Get previous check-ins for trend analysis
-    const { data: previousCheckIns } = await supabase
-      .from('check_ins')
-      .select('*')
-      .eq('patient_id', patient_id)
-      .order('created_at', { ascending: true });
-
-    // Analyze risk using AI
-    const riskAnalysis = analyzeRisk(
-      {
-        pain_level: parseInt(pain_level),
-        temperature: parseFloat(temperature),
-        mobility,
-        symptoms
-      },
-      previousCheckIns || []
-    );
-
-    // Insert check-in with risk analysis
-    const { data: checkIn, error: checkInError } = await supabase
-      .from('check_ins')
-      .insert({
-        patient_id,
-        pain_level: parseInt(pain_level),
-        temperature: parseFloat(temperature),
-        mobility,
-        symptoms,
-        notes,
-        risk_level: riskAnalysis.riskLevel
-      })
-      .select()
-      .single();
-
-    if (checkInError) {
-      return NextResponse.json(
-        { error: checkInError.message },
-        { status: 500 }
-      );
+    if (unacknowledgedOnly) {
+      query = query.eq('acknowledged', false);
     }
 
-    // Create alerts if risk detected
-    if (riskAnalysis.alerts.length > 0) {
-      const alertsToInsert = riskAnalysis.alerts.map(message => ({
-        patient_id,
-        check_in_id: checkIn.id,
-        alert_type: 'risk_detected',
-        message,
-        severity: riskAnalysis.riskLevel === 'high' ? 'critical' : 'warning'
-      }));
+    const { data: alerts, error } = await query;
 
-      const { error: alertsError } = await supabase
-        .from('alerts')
-        .insert(alertsToInsert);
-
-      if (alertsError) {
-        console.error('Error creating alerts:', alertsError);
-      }
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({
-      checkIn,
-      riskAnalysis: {
-        level: riskAnalysis.riskLevel,
-        score: riskAnalysis.score,
-        alerts: riskAnalysis.alerts
-      }
-    }, { status: 201 });
-
+    return NextResponse.json({ alerts });
   } catch (error) {
-    console.error('Error creating check-in:', error);
+    console.error('Error fetching alerts:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -108,38 +45,39 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
+export async function PATCH(request: Request) {
   try {
-    const { userId } = auth();
+    const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const patientId = searchParams.get('patient_id');
+    const body = await request.json();
+    const { alertId, acknowledged } = body;
 
-    if (!patientId) {
+    if (!alertId) {
       return NextResponse.json(
-        { error: 'patient_id is required' },
+        { error: 'alertId is required' },
         { status: 400 }
       );
     }
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
-    const { data: checkIns, error } = await supabase
-      .from('check_ins')
-      .select('*')
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false });
+    const { data: alert, error } = await supabase
+      .from('alerts')
+      .update({ acknowledged: acknowledged ?? true })
+      .eq('id', alertId)
+      .select()
+      .single();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ checkIns });
+    return NextResponse.json({ alert });
   } catch (error) {
-    console.error('Error fetching check-ins:', error);
+    console.error('Error updating alert:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
