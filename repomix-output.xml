@@ -128,308 +128,6 @@ yarn-error.log*
 next-env.d.ts
 </file>
 
-<file path="app/api/alerts/route.ts">
-// app/api/check-ins/route.ts
-import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs';
-import { createClient } from '@/lib/supabase/server';
-import { analyzeRisk } from '@/lib/risk-analyzer';
-
-export async function POST(request: Request) {
-  try {
-    const { userId } = auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const supabase = createClient();
-    const body = await request.json();
-
-    const {
-      patient_id,
-      pain_level,
-      temperature,
-      mobility,
-      symptoms = [],
-      notes = ''
-    } = body;
-
-    // Validate required fields
-    if (!patient_id || pain_level === undefined || !temperature || !mobility) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    // Get previous check-ins for trend analysis
-    const { data: previousCheckIns } = await supabase
-      .from('check_ins')
-      .select('*')
-      .eq('patient_id', patient_id)
-      .order('created_at', { ascending: true });
-
-    // Analyze risk using AI
-    const riskAnalysis = analyzeRisk(
-      {
-        pain_level: parseInt(pain_level),
-        temperature: parseFloat(temperature),
-        mobility,
-        symptoms
-      },
-      previousCheckIns || []
-    );
-
-    // Insert check-in with risk analysis
-    const { data: checkIn, error: checkInError } = await supabase
-      .from('check_ins')
-      .insert({
-        patient_id,
-        pain_level: parseInt(pain_level),
-        temperature: parseFloat(temperature),
-        mobility,
-        symptoms,
-        notes,
-        risk_level: riskAnalysis.riskLevel
-      })
-      .select()
-      .single();
-
-    if (checkInError) {
-      return NextResponse.json(
-        { error: checkInError.message },
-        { status: 500 }
-      );
-    }
-
-    // Create alerts if risk detected
-    if (riskAnalysis.alerts.length > 0) {
-      const alertsToInsert = riskAnalysis.alerts.map(message => ({
-        patient_id,
-        check_in_id: checkIn.id,
-        alert_type: 'risk_detected',
-        message,
-        severity: riskAnalysis.riskLevel === 'high' ? 'critical' : 'warning'
-      }));
-
-      const { error: alertsError } = await supabase
-        .from('alerts')
-        .insert(alertsToInsert);
-
-      if (alertsError) {
-        console.error('Error creating alerts:', alertsError);
-      }
-    }
-
-    return NextResponse.json({
-      checkIn,
-      riskAnalysis: {
-        level: riskAnalysis.riskLevel,
-        score: riskAnalysis.score,
-        alerts: riskAnalysis.alerts
-      }
-    }, { status: 201 });
-
-  } catch (error) {
-    console.error('Error creating check-in:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function GET(request: Request) {
-  try {
-    const { userId } = auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const patientId = searchParams.get('patient_id');
-
-    if (!patientId) {
-      return NextResponse.json(
-        { error: 'patient_id is required' },
-        { status: 400 }
-      );
-    }
-
-    const supabase = createClient();
-
-    const { data: checkIns, error } = await supabase
-      .from('check_ins')
-      .select('*')
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ checkIns });
-  } catch (error) {
-    console.error('Error fetching check-ins:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-</file>
-
-<file path="app/api/check-ins/route.ts">
-// app/api/check-ins/route.ts
-import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs';
-import { createClient } from '@/lib/supabase/server';
-import { analyzeRisk } from '@/lib/risk-analyzer';
-
-export async function POST(request: Request) {
-  try {
-    const { userId } = auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const supabase = createClient();
-    const body = await request.json();
-
-    const {
-      patient_id,
-      pain_level,
-      temperature,
-      mobility,
-      symptoms = [],
-      notes = ''
-    } = body;
-
-    // Validate required fields
-    if (!patient_id || pain_level === undefined || !temperature || !mobility) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    // Get previous check-ins for trend analysis
-    const { data: previousCheckIns } = await supabase
-      .from('check_ins')
-      .select('*')
-      .eq('patient_id', patient_id)
-      .order('created_at', { ascending: true });
-
-    // Analyze risk using AI
-    const riskAnalysis = analyzeRisk(
-      {
-        pain_level: parseInt(pain_level),
-        temperature: parseFloat(temperature),
-        mobility,
-        symptoms
-      },
-      previousCheckIns || []
-    );
-
-    // Insert check-in with risk analysis
-    const { data: checkIn, error: checkInError } = await supabase
-      .from('check_ins')
-      .insert({
-        patient_id,
-        pain_level: parseInt(pain_level),
-        temperature: parseFloat(temperature),
-        mobility,
-        symptoms,
-        notes,
-        risk_level: riskAnalysis.riskLevel
-      })
-      .select()
-      .single();
-
-    if (checkInError) {
-      return NextResponse.json(
-        { error: checkInError.message },
-        { status: 500 }
-      );
-    }
-
-    // Create alerts if risk detected
-    if (riskAnalysis.alerts.length > 0) {
-      const alertsToInsert = riskAnalysis.alerts.map(message => ({
-        patient_id,
-        check_in_id: checkIn.id,
-        alert_type: 'risk_detected',
-        message,
-        severity: riskAnalysis.riskLevel === 'high' ? 'critical' : 'warning'
-      }));
-
-      const { error: alertsError } = await supabase
-        .from('alerts')
-        .insert(alertsToInsert);
-
-      if (alertsError) {
-        console.error('Error creating alerts:', alertsError);
-      }
-    }
-
-    return NextResponse.json({
-      checkIn,
-      riskAnalysis: {
-        level: riskAnalysis.riskLevel,
-        score: riskAnalysis.score,
-        alerts: riskAnalysis.alerts
-      }
-    }, { status: 201 });
-
-  } catch (error) {
-    console.error('Error creating check-in:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function GET(request: Request) {
-  try {
-    const { userId } = auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const patientId = searchParams.get('patient_id');
-
-    if (!patientId) {
-      return NextResponse.json(
-        { error: 'patient_id is required' },
-        { status: 400 }
-      );
-    }
-
-    const supabase = createClient();
-
-    const { data: checkIns, error } = await supabase
-      .from('check_ins')
-      .select('*')
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ checkIns });
-  } catch (error) {
-    console.error('Error fetching check-ins:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-</file>
-
 <file path="app/api/patients/[id]/route.ts">
 // app/api/patients/[id]/route.ts
 import { NextResponse } from 'next/server';
@@ -527,143 +225,6 @@ export async function GET(
     return NextResponse.json({ patient });
   } catch (error) {
     console.error('Error fetching patient:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-</file>
-
-<file path="app/api/patients/route.ts">
-// app/api/patients/route.ts
-import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs';
-import { createClient } from '@/lib/supabase/server';
-
-export async function GET() {
-  try {
-    const { userId } = auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const supabase = createClient();
-
-    // Get user from database
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('clerk_id', userId)
-      .single();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    // Get patients based on user role
-    let query = supabase
-      .from('patients')
-      .select(`
-        *,
-        check_ins (
-          id,
-          pain_level,
-          temperature,
-          mobility,
-          symptoms,
-          notes,
-          risk_level,
-          created_at
-        )
-      `)
-      .order('created_at', { ascending: false });
-
-    if (user.role === 'coordinator') {
-      query = query.eq('coordinator_id', user.id);
-    } else if (user.role === 'patient') {
-      query = query.eq('user_id', user.id);
-    }
-
-    const { data: patients, error } = await query;
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    // Sort check-ins by date
-    const patientsWithSortedCheckIns = patients?.map(patient => ({
-      ...patient,
-      check_ins: patient.check_ins?.sort((a: any, b: any) => 
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      ) || []
-    }));
-
-    return NextResponse.json({ patients: patientsWithSortedCheckIns });
-  } catch (error) {
-    console.error('Error fetching patients:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const { userId } = auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const supabase = createClient();
-
-    // Get coordinator user
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('clerk_id', userId)
-      .single();
-
-    if (userError || !user || user.role !== 'coordinator') {
-      return NextResponse.json(
-        { error: 'Only coordinators can add patients' },
-        { status: 403 }
-      );
-    }
-
-    const body = await request.json();
-    const { name, age, procedure, phone, discharge_date } = body;
-
-    // Validate required fields
-    if (!name || !procedure || !discharge_date) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    // Insert patient
-    const { data: patient, error } = await supabase
-      .from('patients')
-      .insert({
-        name,
-        age: age ? parseInt(age) : null,
-        procedure,
-        phone,
-        discharge_date,
-        coordinator_id: user.id
-      })
-      .select()
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ patient }, { status: 201 });
-  } catch (error) {
-    console.error('Error creating patient:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -1291,6 +852,294 @@ export default config;
     "**/*.mts"
   ],
   "exclude": ["node_modules"]
+}
+</file>
+
+<file path="app/api/alerts/route.ts">
+// app/api/alerts/route.ts
+import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
+import { createClient } from '@/lib/supabase/server';
+
+export async function GET(request: Request) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const patientId = searchParams.get('patient_id');
+    const unacknowledgedOnly = searchParams.get('unacknowledged') === 'true';
+
+    const supabase = await createClient();
+
+    let query = supabase
+      .from('alerts')
+      .select('*, patients(name)')
+      .order('created_at', { ascending: false });
+
+    if (patientId) {
+      query = query.eq('patient_id', patientId);
+    }
+
+    if (unacknowledgedOnly) {
+      query = query.eq('acknowledged', false);
+    }
+
+    const { data: alerts, error } = await query;
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ alerts });
+  } catch (error) {
+    console.error('Error fetching alerts:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { alertId, acknowledged } = body;
+
+    if (!alertId) {
+      return NextResponse.json(
+        { error: 'alertId is required' },
+        { status: 400 }
+      );
+    }
+
+    const supabase = await createClient();
+
+    const { data: alert, error } = await supabase
+      .from('alerts')
+      .update({ acknowledged: acknowledged ?? true })
+      .eq('id', alertId)
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ alert });
+  } catch (error) {
+    console.error('Error updating alert:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="app/api/check-ins/route.ts">
+// app/api/check-ins/route.ts
+import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
+import { createClient } from '@/lib/supabase/server';
+import { analyzeRisk } from '@/lib/risk-analyzer';
+
+export async function POST(request: Request) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const supabase = await createClient();
+    const body = await request.json();
+
+    const {
+      patient_id,
+      pain_level,
+      temperature,
+      mobility,
+      symptoms = [],
+      notes = ''
+    } = body;
+
+    if (!patient_id || pain_level === undefined || !temperature || !mobility) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    const { data: previousCheckIns } = await supabase
+      .from('check_ins')
+      .select('*')
+      .eq('patient_id', patient_id)
+      .order('created_at', { ascending: true });
+
+    const riskAnalysis = analyzeRisk(
+      {
+        pain_level: parseInt(pain_level),
+        temperature: parseFloat(temperature),
+        mobility,
+        symptoms
+      },
+      previousCheckIns || []
+    );
+
+    const { data: checkIn, error: checkInError } = await supabase
+      .from('check_ins')
+      .insert({
+        patient_id,
+        pain_level: parseInt(pain_level),
+        temperature: parseFloat(temperature),
+        mobility,
+        symptoms,
+        notes,
+        risk_level: riskAnalysis.riskLevel
+      })
+      .select()
+      .single();
+
+    if (checkInError) {
+      return NextResponse.json({ error: checkInError.message }, { status: 500 });
+    }
+
+    if (riskAnalysis.alerts.length > 0) {
+      const alertsToInsert = riskAnalysis.alerts.map(message => ({
+        patient_id,
+        check_in_id: checkIn.id,
+        alert_type: 'risk_detected',
+        message,
+        severity: riskAnalysis.riskLevel === 'high' ? 'critical' : 'warning'
+      }));
+
+      const { error: alertsError } = await supabase.from('alerts').insert(alertsToInsert);
+      if (alertsError) console.error('Error creating alerts:', alertsError);
+    }
+
+    return NextResponse.json({
+      checkIn,
+      riskAnalysis: {
+        level: riskAnalysis.riskLevel,
+        score: riskAnalysis.score,
+        alerts: riskAnalysis.alerts
+      }
+    }, { status: 201 });
+
+  } catch (error) {
+    console.error('Error creating check-in:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const patientId = searchParams.get('patient_id');
+
+    if (!patientId) {
+      return NextResponse.json({ error: 'patient_id is required' }, { status: 400 });
+    }
+
+    const supabase = await createClient();
+
+    const { data: checkIns, error } = await supabase
+      .from('check_ins')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('created_at', { ascending: false });
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    return NextResponse.json({ checkIns });
+  } catch (error) {
+    console.error('Error fetching check-ins:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+</file>
+
+<file path="app/api/patients/route.ts">
+// app/api/patients/[id]/route.ts
+import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
+import { createClient } from '@/lib/supabase/server';
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const supabase = await createClient();
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('clerk_id', userId)
+      .single();
+
+    if (userError || !user || user.role !== 'coordinator') {
+      return NextResponse.json({ error: 'Only coordinators can delete patients' }, { status: 403 });
+    }
+
+    const { error } = await supabase
+      .from('patients')
+      .delete()
+      .eq('id', params.id)
+      .eq('coordinator_id', user.id);
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting patient:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const supabase = await createClient();
+
+    const { data: patient, error } = await supabase
+      .from('patients')
+      .select(`
+        *,
+        check_ins (*),
+        alerts (*)
+      `)
+      .eq('id', params.id)
+      .single();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    return NextResponse.json({ patient });
+  } catch (error) {
+    console.error('Error fetching patient:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }
 </file>
 
