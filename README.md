@@ -1,7 +1,7 @@
-# 🏥 Medi Flow
+# 🏥 MediFlow
 ### Proactive Digital Post-Discharge Follow-Up System
 
-Medi flow is a **digital healthcare platform** that ensures **continuous, reliable, and proactive patient care after hospital discharge**.  
+MediFlow is a **digital healthcare platform** that ensures **continuous, reliable, and proactive patient care after hospital discharge**.  
 By combining **automated reminders, AI-based risk assessment, video consultations, and ASHA worker integration**, the system reduces missed follow-ups, prevents post-discharge complications, and improves recovery outcomes.
 
 ![WhatsApp Image 2026-01-25 at 09 00 14](https://github.com/user-attachments/assets/7a4b5edd-9adf-48eb-beeb-0b0ed40e98a1)
